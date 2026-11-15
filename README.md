@@ -34,11 +34,22 @@ short_description: 依 TG-Txxxx 編號牌自動重新命名樹木照片
 
 ## 本機使用
 
-需要已安裝 [Python 3.10 或以上](https://www.python.org/downloads/)。
+需要已安裝 [Python 3.10 或以上](https://www.python.org/downloads/)。Windows 安裝時請勾選 Add python.exe to PATH。
+
+先下載或更新程式：
 
 ```bash
 git clone https://github.com/windart119/tree-photo-renamer.git
 cd tree-photo-renamer
+```
+
+若已經複製過，請在資料夾裡執行 `git pull`。
+
+Windows 可直接雙擊 `開始.bat`。第一次安裝套件可能需要較長時間，請不要關閉視窗。啟動後會自動開啟瀏覽器；若沒有開啟，請前往 http://127.0.0.1:7860 （不是 5000 埠）。
+
+或手動執行：
+
+```bash
 python -m venv .venv
 
 # Windows
@@ -50,9 +61,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-然後用瀏覽器開啟終端機顯示的本機網址（通常是 http://127.0.0.1:7860 ）。
-
-首次啟動會下載辨識模型，可能需要幾分鐘。
+首次辨識還會下載模型，可能需要幾分鐘。
 
 ## 授權
 
