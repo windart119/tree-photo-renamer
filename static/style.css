@@ -1,0 +1,94 @@
+:root {
+  --bg: #f3f6f2;
+  --card: #ffffff;
+  --ink: #1d2a22;
+  --muted: #4d6156;
+  --line: #d5e0d8;
+  --accent: #2f6f4e;
+  --accent-dark: #245a3e;
+  --ok: #1f6b3a;
+  --err: #9b2c2c;
+  font-family: "Segoe UI", "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, #e7f3ea, transparent),
+    var(--bg);
+  color: var(--ink);
+}
+
+.card {
+  width: min(760px, calc(100% - 32px));
+  margin: 40px auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 32px;
+  box-shadow: 0 12px 32px rgba(29, 42, 34, 0.06);
+}
+
+h1 { margin: 0 0 12px; font-size: 1.8rem; }
+
+.lead, .hint, .rules { color: var(--muted); line-height: 1.6; }
+.rules { padding-left: 1.2rem; }
+code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  background: #eef5f0;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+.drop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  margin: 20px 0 16px;
+  border: 2px dashed #b7cbbd;
+  border-radius: 12px;
+  background: #f8fbf8;
+  cursor: pointer;
+  color: var(--muted);
+  text-align: center;
+  padding: 16px;
+}
+
+.drop input { display: none; }
+
+button, .download {
+  display: inline-block;
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 20px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 1rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+button:hover, .download:hover { background: var(--accent-dark); }
+button:disabled { opacity: 0.7; cursor: wait; }
+
+.status { margin-top: 18px; font-weight: 600; }
+.status.ok { color: var(--ok); }
+.status.error { color: var(--err); }
+
+#log {
+  margin-top: 12px;
+  max-height: 280px;
+  overflow: auto;
+  background: #173023;
+  color: #e8f6ee;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}
+
+.download { margin-top: 16px; }

@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+uploads/
+outputs/
+models/*.pth
+.EasyOCR/
+*.zip
+.DS_Store

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="card">
+    <h1>{{ title }}</h1>
+    <p class="lead">上傳樹木照片，程式會辨識 <code>TG-Txxxx</code> 編號牌，並依序重新命名。原檔不會被改動，完成後可下載 zip。</p>
+    <ul class="rules">
+      <li>編號牌：<code>TG-Txxxx_Tag</code></li>
+      <li>之後第 1 張：<code>TG-Txxxx_Whole view</code></li>
+      <li>之後第 2 張：<code>TG-Txxxx_Crown</code></li>
+      <li>再之後：<code>TG-Txxxx_ (1)</code>、<code>TG-Txxxx_ (2)</code>……</li>
+    </ul>
+    <p class="hint">請依拍攝順序選擇檔案：先選編號牌，再選整體、樹冠及其他細節。也可上傳含照片的 zip。</p>
+
+    <form id="form">
+      <label class="drop" for="photos">
+        <input id="photos" name="photos" type="file" accept="image/*,.zip" multiple required>
+        <span id="file-label">點擊或拖放照片到這裡</span>
+      </label>
+      <button type="submit" id="submit">開始處理</button>
+    </form>
+
+    <div id="status" hidden></div>
+    <pre id="log" hidden></pre>
+    <a id="download" class="download" hidden>下載重新命名後的照片</a>
+  </main>
+
+  <script>
+    const form = document.getElementById("form");
+    const input = document.getElementById("photos");
+    const label = document.getElementById("file-label");
+    const submit = document.getElementById("submit");
+    const statusBox = document.getElementById("status");
+    const logBox = document.getElementById("log");
+    const download = document.getElementById("download");
+
+    input.addEventListener("change", () => {
+      const n = input.files.length;
+      label.textContent = n ? `已選擇 ${n} 個檔案` : "點擊或拖放照片到這裡";
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!input.files.length) return;
+      submit.disabled = true;
+      submit.textContent = "處理中，首次可能需要一至兩分鐘……";
+      statusBox.hidden = false;
+      statusBox.textContent = "正在上傳並辨識，請不要關閉這個頁面。";
+      statusBox.className = "status";
+      logBox.hidden = false;
+      logBox.textContent = "";
+      download.hidden = true;
+
+      const data = new FormData();
+      for (const file of input.files) data.append("photos", file);
+
+      try {
+        const res = await fetch("/api/process", { method: "POST", body: data });
+        const body = await res.json();
+        if (body.log && body.log.length) logBox.textContent = body.log.join("\n");
+        if (!res.ok || !body.ok) {
+          statusBox.textContent = body.error || "處理失敗。";
+          statusBox.className = "status error";
+          return;
+        }
+        const n = body.result ? body.result.renamed : 0;
+        statusBox.textContent = `完成，已重新命名 ${n} 張照片。`;
+        statusBox.className = "status ok";
+        download.href = body.download;
+        download.hidden = false;
+      } catch (err) {
+        statusBox.textContent = "無法連線到本機程式，請確認 python app.py 仍在執行。";
+        statusBox.className = "status error";
+      } finally {
+        submit.disabled = false;
+        submit.textContent = "開始處理";
+      }
+    });
+  </script>
+</body>
+</html>
