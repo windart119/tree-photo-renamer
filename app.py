@@ -1,27 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Browser-based tree photo renaming tool."""
+"""Browser-based tree photo renaming tool (Gradio, for local use and Hugging Face Spaces)."""
 
 from __future__ import annotations
 
 import io
-import os
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from uuid import uuid4
 
-from flask import Flask, jsonify, render_template, request, send_file
+import gradio as gr
 
 from renamer import IMAGE_EXTS, rename_photos
 
-APP_TITLE = "樹木相片重新命名工具"
-UPLOAD_ROOT = Path(tempfile.gettempdir()) / "tree-photo-renamer"
-UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+try:
+    import spaces
+except ImportError:  # local run without the Spaces helper
+    class spaces:  # type: ignore
+        @staticmethod
+        def GPU(*args, **kwargs):
+            def decorator(fn):
+                return fn
 
-app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 512 * 1024 * 1024  # 512 MB
+            if args and callable(args[0]) and not kwargs:
+                return args[0]
+            return decorator
+
+
+APP_TITLE = "樹木相片重新命名工具"
 
 
 def _safe_name(name: str) -> str:
@@ -29,37 +36,6 @@ def _safe_name(name: str) -> str:
     if not name or name in {".", ".."}:
         return "photo"
     return name
-
-
-def _collect_uploads(tmp: Path) -> list[str]:
-    """Save uploaded images or zip contents. Return names in upload order."""
-    order: list[str] = []
-    files = request.files.getlist("photos")
-    for item in files:
-        if not item or not item.filename:
-            continue
-        filename = _safe_name(item.filename)
-        suffix = Path(filename).suffix.lower()
-        if suffix == ".zip":
-            data = io.BytesIO(item.read())
-            with zipfile.ZipFile(data) as zf:
-                for info in zf.infolist():
-                    if info.is_dir():
-                        continue
-                    inner = _safe_name(info.filename)
-                    if Path(inner).suffix.lower() not in IMAGE_EXTS:
-                        continue
-                    target = _unique_path(tmp, inner)
-                    with zf.open(info) as src, open(target, "wb") as dst:
-                        shutil.copyfileobj(src, dst)
-                    order.append(target.name)
-            continue
-        if suffix not in IMAGE_EXTS:
-            continue
-        target = _unique_path(tmp, filename)
-        item.save(target)
-        order.append(target.name)
-    return order
 
 
 def _unique_path(folder: Path, filename: str) -> Path:
@@ -74,73 +50,110 @@ def _unique_path(folder: Path, filename: str) -> Path:
     return dest
 
 
-@app.get("/")
-def index():
-    return render_template("index.html", title=APP_TITLE)
+def _as_path(item) -> Path | None:
+    if item is None:
+        return None
+    if isinstance(item, (list, tuple)):
+        return _as_path(item[0]) if item else None
+    if hasattr(item, "name") and item.name:
+        return Path(str(item.name))
+    return Path(str(item))
 
 
-@app.post("/api/process")
-def process():
-    tmp = UPLOAD_ROOT / str(uuid4())
-    tmp.mkdir(parents=True, exist_ok=True)
+def _collect_uploads(files, tmp: Path) -> list[str]:
+    order: list[str] = []
+    if not files:
+        return order
+    if not isinstance(files, list):
+        files = [files]
+    for item in files:
+        path = _as_path(item)
+        if path is None or not path.exists() or not path.is_file():
+            continue
+        filename = _safe_name(path.name)
+        suffix = path.suffix.lower()
+        if suffix == ".zip":
+            with zipfile.ZipFile(path) as zf:
+                for info in zf.infolist():
+                    if info.is_dir():
+                        continue
+                    inner = _safe_name(info.filename)
+                    if Path(inner).suffix.lower() not in IMAGE_EXTS:
+                        continue
+                    target = _unique_path(tmp, inner)
+                    with zf.open(info) as src, open(target, "wb") as dst:
+                        shutil.copyfileobj(src, dst)
+                    order.append(target.name)
+            continue
+        if suffix not in IMAGE_EXTS:
+            continue
+        target = _unique_path(tmp, filename)
+        shutil.copy2(path, target)
+        order.append(target.name)
+    return order
+
+
+@spaces.GPU(duration=180)
+def process_photos(files):
+    if not files:
+        return "請先選擇照片，或上傳含照片的 zip。", None
+
+    tmp = Path(tempfile.mkdtemp(prefix="tree-photo-"))
     logs: list[str] = []
+    zip_out = None
     try:
-        order = _collect_uploads(tmp)
+        order = _collect_uploads(files, tmp)
         if not order:
-            return jsonify({"ok": False, "error": "請先選擇照片，或上傳含照片的 zip。", "log": logs}), 400
-
+            return "請先選擇照片，或上傳含照片的 zip。", None
         logs.append(f"已接收 {len(order)} 張照片。")
         result = rename_photos(tmp, log=logs.append, order=order)
 
-        zip_name = "重新命名照片.zip"
-        zip_path = tmp / zip_name
         image_files = [
             p for p in tmp.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTS
         ]
         if not image_files:
-            return jsonify({"ok": False, "error": "處理後沒有可下載的照片。", "log": logs, "result": result}), 400
+            logs.append("處理後沒有可下載的照片。")
+            return "\n".join(logs), None
 
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zip_out = str(Path(tempfile.gettempdir()) / "重新命名照片.zip")
+        with zipfile.ZipFile(zip_out, "w", zipfile.ZIP_DEFLATED) as zf:
             for p in sorted(image_files, key=lambda x: x.name.lower()):
                 zf.write(p, p.name)
-
-        token = tmp.name
-        return jsonify(
-            {
-                "ok": True,
-                "log": logs,
-                "result": {
-                    "renamed": result["renamed"],
-                    "skipped": result["skipped"],
-                    "errors": result["errors"],
-                    "mapping": [{"from": a, "to": b} for a, b in result["mapping"]],
-                },
-                "download": f"/download/{token}",
-            }
-        )
+        logs.append(f"完成，已重新命名 {result['renamed']} 張照片。可下載 zip。")
+        return "\n".join(logs), zip_out
     except Exception as e:
         logs.append(f"錯誤：{e}")
+        return "\n".join(logs), None
+    finally:
         shutil.rmtree(tmp, ignore_errors=True)
-        return jsonify({"ok": False, "error": str(e), "log": logs}), 500
 
 
-@app.get("/download/<token>")
-def download(token: str):
-    if not token or any(ch in token for ch in "\\/."):
-        return "無效的下載連結", 400
-    folder = UPLOAD_ROOT / token
-    zip_path = folder / "重新命名照片.zip"
-    if not zip_path.is_file():
-        return "找不到檔案，請重新處理一次。", 404
-    return send_file(
-        zip_path,
-        as_attachment=True,
-        download_name="重新命名照片.zip",
-        mimetype="application/zip",
+with gr.Blocks(title=APP_TITLE, theme=gr.themes.Soft()) as demo:
+    gr.Markdown(
+        f"""
+# {APP_TITLE}
+
+上傳樹木照片，程式會辨識 `TG-Txxxx` 編號牌，並依序重新命名。原檔不會被改動，完成後可下載 zip。
+
+- 編號牌：`TG-Txxxx_Tag`
+- 之後第 1 張：`TG-Txxxx_Whole view`
+- 之後第 2 張：`TG-Txxxx_Crown`
+- 再之後：`TG-Txxxx_ (1)`、`TG-Txxxx_ (2)`……
+
+請依拍攝順序選擇檔案：先選編號牌，再選整體、樹冠及其他細節。也可上傳含照片的 zip。
+照片只用於這次處理，不會寫入程式碼儲存庫。
+        """
     )
+    files = gr.File(
+        label="上傳照片或 zip",
+        file_count="multiple",
+        file_types=["image", ".zip"],
+    )
+    btn = gr.Button("開始處理", variant="primary")
+    log = gr.Textbox(label="處理紀錄", lines=16)
+    download = gr.File(label="下載重新命名後的照片")
+    btn.click(process_photos, inputs=files, outputs=[log, download])
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5000"))
-    print(f"請在瀏覽器開啟 http://127.0.0.1:{port}")
-    app.run(host="127.0.0.1", port=port, debug=False)
+    demo.launch()

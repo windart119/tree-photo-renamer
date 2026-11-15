@@ -95,8 +95,15 @@ def get_model_dir() -> Path:
     return model_dir
 
 
-def init_reader(log=print):
+def init_reader(log=print, gpu=None):
     global _cached_reader
+    if gpu is None:
+        try:
+            import torch
+
+            gpu = bool(torch.cuda.is_available())
+        except Exception:
+            gpu = False
     if _cached_reader is not None:
         log("辨識引擎已就緒。")
         return _cached_reader
@@ -111,7 +118,7 @@ def init_reader(log=print):
     log("正在初始化 OCR，請稍候……")
     _cached_reader = easyocr.Reader(
         ["en"],
-        gpu=False,
+        gpu=gpu,
         model_storage_directory=str(model_dir),
         download_enabled=not local_models,
     )
